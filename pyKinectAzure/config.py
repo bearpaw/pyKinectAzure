@@ -1,6 +1,7 @@
 import _k4a
+import _k4abt
 
-class config:
+class K4aConfig:
 	def __init__(self,
 				color_format=_k4a.K4A_IMAGE_FORMAT_COLOR_MJPG,
 				color_resolution=_k4a.K4A_COLOR_RESOLUTION_720P,
@@ -63,3 +64,44 @@ class config:
 											self.wired_sync_mode,\
 											self.subordinate_delay_off_master_usec,\
 											self.disable_streaming_indicator)
+											
+
+class K4abtConfig:
+	def __init__(self,
+				sensor_orientation = _k4abt.K4ABT_SENSOR_ORIENTATION_DEFAULT,
+				processing_mode = _k4abt.K4ABT_TRACKER_PROCESSING_MODE_GPU,
+				gpu_device_id = 0):
+		self.sensor_orientation = sensor_orientation
+		self.processing_mode = processing_mode
+		self.gpu_device_id = gpu_device_id
+		
+		self._on_change()
+
+	def __setattr__(self, name, value):
+		"""Run on change function when configuration parameters are changed
+		"""
+		if hasattr(self, name):
+			if name != "current_config":
+				if int(self.__dict__[name]) != value:
+					self.__dict__[name] = value
+					self._on_change()
+			else:
+				self.__dict__[name] = value
+		else:
+			self.__dict__[name] = value
+
+	def __str__(self):
+		"""Print the current settings and a short explanation"""
+		message = (
+			"k4abt configuration: \n"
+			f"\tsensor_orientation: {self.sensor_orientation} \n\t(0:DEFAULT, 1:C90, 2:CC90, 3:FLIP180)\n\n"
+			f"\tprocessing_mode: {self.processing_mode} \n\t(0:GPU, 1:CPU)\n\n"
+			f"\gpu_device_id: {self.gpu_device_id} \n\t"
+			)
+		return message
+
+	def _on_change(self):
+		self.current_config =  _k4abt.k4abt_tracker_configuration_t(
+			self.sensor_orientation,
+			self.processing_mode,
+			self.gpu_device_id)

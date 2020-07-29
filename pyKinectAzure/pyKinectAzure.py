@@ -1,24 +1,40 @@
 import _k4a
+import _k4abt
 import numpy as np
 import cv2
 import sys
 import ctypes
-from config import config
+from config import K4aConfig, K4abtConfig
 import postProcessing
 
 class pyKinectAzure:
 
-	def __init__(self,modulePath='C:\\Program Files\\Azure Kinect SDK v1.4.0\\sdk\\windows-desktop\\amd64\\release\\bin\\k4a.dll'):
+	def __init__(
+		self, 
+		k4a_path,
+		k4abt_path):
 
-		self.k4a = _k4a.k4a(modulePath)
+		self.k4a = _k4a.k4a(k4a_path)
+		self.k4abt = _k4abt.k4abt(k4abt_path)
 
 		self.device_handle = _k4a.k4a_device_t()
 		self.capture_handle = _k4a.k4a_capture_t()	
-		self.config = config()
+		self.tracker_handle = _k4abt.k4abt_tracker_t()
+		self.calibration = None
+		self.body_frame_handle = _k4abt.k4abt_frame_t()
+		self.k4a_config = K4aConfig()
+		self.k4abt_config = K4abtConfig()
 		self.imu_sample = _k4a.k4a_imu_sample_t()
 
 		self.cameras_running = False
 		self.imu_running = False
+		self.bt_running = False
+	
+	def destroy(self):
+		self.tracker_shutdown()
+		self.tracker_destroy()
+		self.device_stop_cameras()
+		self.device_close()
 
 	def device_get_installed_count(self):
 		"""Gets the number of connected devices
@@ -247,7 +263,7 @@ class pyKinectAzure:
 		The calibration output is used as input to all calibration and transformation functions.
 		"""
 		_k4a.VERIFY(self.k4a.k4a_device_get_calibration(self.device_handle,depth_mode,color_resolution,calibration),"Get calibration failed!")
-
+		
 	def capture_get_color_image(self):
 		"""Get the color image associated with the given capture.
 
@@ -504,21 +520,32 @@ class pyKinectAzure:
 			return np.frombuffer(buffer_array, dtype="<i2").reshape(image_height,image_width)
 		elif image_format == _k4a.K4A_IMAGE_FORMAT_IR16:
 			return np.frombuffer(buffer_array, dtype="<i2").reshape(image_height,image_width)
-
+		elif image_format == _k4a.K4A_IMAGE_FORMAT_CUSTOM8:
+			return np.frombuffer(buffer_array, dtype=np.uint8).reshape(image_height, image_width, 1)
+	
+	def get_calibration(self):
+		if self.calibration is None:
+			calibration = _k4a.k4a_calibration_t()
+			# Get the camera calibration
+			self.device_get_calibration(self.config.depth_mode,self.config.color_resolution, calibration)
+			self.calibration = calibration
+		return self.calibration
+	
+	def get_transformation(self):
+		if self.transformation_handle is None:
+			calibration = self.get_calibration()
+			self.transformation_handle = self.transformation_create(calibration)
+		return self.transformation_handle
+	
 	def transform_depth_to_color(self,input_depth_image_handle, color_image_handle):
-		calibration = _k4a.k4a_calibration_t()
-
 		# Get desired image format
 		image_format = self.image_get_format(input_depth_image_handle)
 		image_width = self.image_get_width_pixels(color_image_handle)
 		image_height = self.image_get_height_pixels(color_image_handle)
 		image_stride = 0
 
-		# Get the camera calibration
-		self.device_get_calibration(self.config.depth_mode,self.config.color_resolution,calibration)
-
 		# Create transformation
-		transformation_handle = self.transformation_create(calibration)
+		transformation_handle = self.get_transformation()
 
 		# Create the image handle		
 		transformed_depth_image_handle = _k4a.k4a_image_t()
@@ -583,6 +610,78 @@ class pyKinectAzure:
 		imu_results.gyro_timestamp_usec = buffer_array[4]
 
 		return imu_results
+	
+	def tracker_create(self, sensor_calibration, config):
+		if config is not None:
+			self.bt_config = config
+		
+		if not self.bt_running:
+			_k4a.VERIFY(self.k4abt.k4abt_tracker_create(sensor_calibration, self.bt_config.current_config, self.tracker_handle), "Body tracker initialization failed!")
+			self.bt_running = True
+		
+	def tracker_enqueue_capture(self):
+		_k4a.VERIFY(
+			self.k4abt.k4abt_tracker_enqueue_capture(
+				self.tracker_handle, 
+				self.capture_handle, 
+				_k4a.K4A_WAIT_INFINITE),
+			"Error! Add capture to tracker process queue timeout!")
+		
+	def tracker_pop_result(self):
+		_k4a.VERIFY(
+			self.k4abt.k4abt_tracker_pop_result(
+				self.tracker_handle, 
+				self.body_frame_handle, 
+				_k4a.K4A_WAIT_INFINITE),
+			"Error! Pop body frame result timeout!")
+
+	def tracker_shutdown(self):
+		self.k4abt.k4abt_tracker_shutdown(self.tracker_handle)
+
+	def tracker_destroy(self):
+		self.k4abt.k4abt_tracker_destroy(self.tracker_handle)
+	
+	def get_num_bodies(self):
+		num_bodies = self.k4abt.k4abt_frame_get_num_bodies(self.body_frame_handle)
+		return num_bodies
+	
+	def get_body_id(self, id):
+		num_bodies = self.get_num_bodies()
+		assert id >=0 and id < num_bodies, "id should between 0 and {}".format(num_bodies)
+		return self.k4abt.k4abt_frame_get_body_id(self.body_frame_handle, id)
+	
+	def get_body_index_map(self):
+		return self.k4abt.k4abt_frame_get_body_index_map(self.body_frame_handle)
+	
+	def get_body_skeleton(self, id):
+		skeleton_handle = _k4abt.k4abt_skeleton_t()
+		self.k4abt.k4abt_frame_get_body_skeleton(self.body_frame_handle, id, skeleton_handle)
+		return skeleton_handle
+	
+	def _project_skeleton_to_2d(self, skeleton_handle, target_frame):		
+		calibration = self.get_calibration()
+		# Create the image Handle
+		joints2d = []
+		confidence_level = []
+		for i in range(_k4abt.K4ABT_JOINT_COUNT):
+			joint_2d = _k4a.k4a_float2_t()
+			self.k4a.k4a_calibration_3d_to_2d(
+				calibration,
+				skeleton_handle.joints[i].position,
+				_k4a.K4A_CALIBRATION_TYPE_DEPTH,
+				target_frame,
+				joint_2d,
+				ctypes.c_int(1)
+				)
+			joints2d.append(joint_2d)
+			confidence_level.append(skeleton_handle.joints[i].confidence_level)
+		return joints2d, confidence_level
+	
+	def project_skeleton_to_color(self, skeleton_handle):
+		return self._project_skeleton_to_2d(skeleton_handle, _k4a.K4A_CALIBRATION_TYPE_COLOR)
+	
+	def project_skeleton_to_depth(self, skeleton_handle):
+		return self._project_skeleton_to_2d(skeleton_handle, _k4a.K4A_CALIBRATION_TYPE_DEPTH)
 
 
 	class imu_results:
