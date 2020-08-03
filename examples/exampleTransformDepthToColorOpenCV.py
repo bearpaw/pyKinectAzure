@@ -7,18 +7,19 @@ import cv2
 
 # Path to the module
 # TODO: Modify with the path containing the k4a.dll from the Azure Kinect SDK
-modulePath = 'C:\\Program Files\\Azure Kinect SDK v1.4.1\\sdk\\windows-desktop\\amd64\\release\\bin\\k4a.dll'
+k4a_path = '/home/weiy/Softwares/Azure-Kinect-Sensor-SDK/release/v1.4.1/lib/libk4a.so'
+k4abt_path = '/usr/lib/libk4abt.so.1.0'
 
 if __name__ == "__main__":
 
 	# Initialize the library with the path containing the module
-	pyK4A = pyKinectAzure(modulePath)
+	pyK4A = pyKinectAzure(k4a_path, k4abt_path)
 
 	# Open device
 	pyK4A.device_open()
 
 	# Modify camera configuration
-	device_config = pyK4A.config
+	device_config = pyK4A.k4a_config
 	device_config.color_format = _k4a.K4A_IMAGE_FORMAT_COLOR_BGRA32
 	device_config.color_resolution = _k4a.K4A_COLOR_RESOLUTION_720P
 	device_config.depth_mode = _k4a.K4A_DEPTH_MODE_WFOV_2X2BINNED

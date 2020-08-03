@@ -20,6 +20,7 @@ class pyKinectAzure:
 		self.device_handle = _k4a.k4a_device_t()
 		self.capture_handle = _k4a.k4a_capture_t()	
 		self.tracker_handle = _k4abt.k4abt_tracker_t()
+		self.transformation_handle = None
 		self.calibration = None
 		self.body_frame_handle = _k4abt.k4abt_frame_t()
 		self.k4a_config = K4aConfig()
@@ -33,6 +34,7 @@ class pyKinectAzure:
 	def destroy(self):
 		self.tracker_shutdown()
 		self.tracker_destroy()
+		self.transformation_destroy(transformation_handle)
 		self.device_stop_cameras()
 		self.device_close()
 
@@ -458,7 +460,6 @@ class pyKinectAzure:
 		Remarks:
 		None
 		"""
-
 		self.k4a.k4a_transformation_destroy(transformation_handle)
 
 	def transformation_depth_image_to_color_camera(self,transformation_handle,input_depth_image_handle, transformed_depth_image_handle):
@@ -556,9 +557,6 @@ class pyKinectAzure:
 
 		# Get transformed image data
 		transformed_image = self.image_convert_to_numpy(transformed_depth_image_handle)
-
-		# Close transformation 
-		self.transformation_destroy(transformation_handle)
 
 		return transformed_image
 
