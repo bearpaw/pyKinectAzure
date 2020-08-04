@@ -34,7 +34,7 @@ class pyKinectAzure:
 	def destroy(self):
 		self.tracker_shutdown()
 		self.tracker_destroy()
-		self.transformation_destroy(transformation_handle)
+		self.transformation_destroy(self.transformation_handle)
 		self.device_stop_cameras()
 		self.device_close()
 
