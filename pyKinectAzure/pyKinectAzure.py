@@ -675,11 +675,36 @@ class pyKinectAzure:
 			confidence_level.append(skeleton_handle.joints[i].confidence_level)
 		return joints2d, confidence_level
 	
-	def project_skeleton_to_color(self, skeleton_handle):
+	def _project_skeleton_to_3d(self, skeleton_handle, target_frame):		
+		calibration = self.get_calibration()
+		# Create the image Handle
+		joints3d = []
+		confidence_level = []
+		for i in range(_k4abt.K4ABT_JOINT_COUNT):
+			joint_3d = _k4a.k4a_float3_t()
+			self.k4a.k4a_calibration_3d_to_3d(
+				calibration,
+				skeleton_handle.joints[i].position,
+				_k4a.K4A_CALIBRATION_TYPE_DEPTH,
+				target_frame,
+				joint_3d,
+				ctypes.c_int(1)
+				)
+			joints3d.append(joint_3d)
+			confidence_level.append(skeleton_handle.joints[i].confidence_level)
+		return joints3d, confidence_level
+	
+	def project_skeleton_to_color_2d(self, skeleton_handle):
 		return self._project_skeleton_to_2d(skeleton_handle, _k4a.K4A_CALIBRATION_TYPE_COLOR)
 	
-	def project_skeleton_to_depth(self, skeleton_handle):
+	def project_skeleton_to_depth_2d(self, skeleton_handle):
 		return self._project_skeleton_to_2d(skeleton_handle, _k4a.K4A_CALIBRATION_TYPE_DEPTH)
+	
+	def project_skeleton_to_color_3d(self, skeleton_handle):
+		return self._project_skeleton_to_3d(skeleton_handle, _k4a.K4A_CALIBRATION_TYPE_COLOR)
+	
+	def project_skeleton_to_depth_3d(self, skeleton_handle):
+		return self._project_skeleton_to_3d(skeleton_handle, _k4a.K4A_CALIBRATION_TYPE_DEPTH)
 
 
 	class imu_results:
